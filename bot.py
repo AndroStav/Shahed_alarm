@@ -1,6 +1,6 @@
 from telethon import TelegramClient, events
 from datetime import datetime, timezone
-import logging, re, configparser, sys
+import logging, re, configparser
 
 logging.basicConfig(format='[%(levelname)s %(asctime)s] %(name)s: %(message)s',
                     level=logging.WARNING)
@@ -19,8 +19,7 @@ def load_config(filename):
 
 config = load_config("config.ini")
 if config is None:
-    logging.error("Конфігурація не завантажена, вихід з програми")
-    sys.exit(1)
+    raise Exception("Конфігурація не завантажена")
     
 session = config["General"]["session"]
 api_id = config["General"]["api_id"]
