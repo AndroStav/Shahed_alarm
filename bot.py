@@ -1,22 +1,40 @@
 from telethon import TelegramClient, events
 from datetime import datetime, timezone
-import logging, re
+import logging, re, configparser, sys
 
-logging.basicConfig(format='[%(levelname) %(asctime)s] %(name)s: %(message)s',
+logging.basicConfig(format='[%(levelname)s %(asctime)s] %(name)s: %(message)s',
                     level=logging.WARNING)
 
-api_id = 123456789
-api_hash = 'secret_hash'
+def load_config(filename):
+    config = configparser.ConfigParser()
+    with open(filename, "r", encoding="utf-8") as f:
+        config.read_file(f)
+    
+    if not config.sections():
+        logging.error(f"Не вдалося завантажити конфігурацію з файлу: {filename}")
+        return None
+    
+    logging.info("Конфігурація завантажена")
+    return config
 
-client = TelegramClient('user_session', api_id, api_hash)
-
-destination_channel = "@shahed_alarm"
-channels = ["@AndroStav", "@kpszsu", "@war_monitor", "@smolii_ukraine", "@kiev_pravyy_bereg", "@kudy_letyt", 
-            "@UaNazhyvo", "@eRadarrua", "@monitoringwarua", "@truvogaradar", "@mon1tor_ua", "@strategicontrol", "@vanek_nikolaev"]
-
-#triggers = ["академ", "святошин", "білич", "белич", "ірпін", "ірпен", "ирпен", "коцюбин", "буч", "лавін", "лавин"]
-triggers = ["академ", "святошин", "б[іе]лич", "[іи]рп[іе]н", "коцюбин", "буч", "лав[іи]н"]
-black_list = ["дтп", "академ[іи]к", "грн", "\\$", "телефон", "реклам", "новин", "👇"]
+config = load_config("config.ini")
+if config is None:
+    logging.error("Конфігурація не завантажена, вихід з програми")
+    sys.exit(1)
+    
+session = config["General"]["session"]
+api_id = config["General"]["api_id"]
+api_hash = config["General"]["api_hash"]
+    
+delay_long = int(config["Delays"]["delay_long"])
+delay_short = int(config["Delays"]["delay_short"])
+    
+destination_channel = config["Channels"]["destination_channel"]
+channels = config["Channels"]["channels"].split(", ")
+    
+triggers = config["Triggers"]["triggers"].split(", ")
+black_list = config["Triggers"]["black_list"].split(", ")
+client = TelegramClient(session, api_id, api_hash)
 
 async def main():
     await client.start()
@@ -37,15 +55,12 @@ async def main():
         nonlocal last_message, info_message
         
         if event.message.text:
-            #triggered_word = next((trigger for trigger in triggers if trigger in event.raw_text.lower()), None)
             found_triggers = {trigger for trigger in triggers if re.search(trigger, event.raw_text, re.IGNORECASE)}
             
-            #if any(trigger.lower() in event.raw_text.lower() for trigger in triggers):
             if found_triggers:
-                #if not any(black_word in event.raw_text.lower() for black_word in black_list):
                 if not any(re.search(black_word, event.raw_text, re.IGNORECASE) for black_word in black_list):
-                    if not last_message["time"] or (event.date - last_message["time"]).seconds > 480 \
-                        or (not any(re.search(trigger, event.raw_text, re.IGNORECASE) for trigger in last_message["found_triggers"]) and (event.date - last_message["time"]).seconds > 180):
+                    if not last_message["time"] or (event.date - last_message["time"]).seconds > delay_long \
+                        or (not any(re.search(trigger, event.raw_text, re.IGNORECASE) for trigger in last_message["found_triggers"]) and (event.date - last_message["time"]).seconds > delay_short):
                         
                         last_message["number"] = 1
                         print(f"\n{event.date}")
@@ -58,7 +73,7 @@ async def main():
                     else:
                         last_message["number"] += 1
                         last_message["found_triggers"].update(found_triggers)
-                        
+
                         trigger_text = ", ".join(last_message["found_triggers"])
                         
                         if not info_message:
