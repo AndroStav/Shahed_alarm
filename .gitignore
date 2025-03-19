@@ -1,2 +1,5 @@
-config.ini
 old/
+config.ini
+bot.log
+user_session.session
+user_session.session-journal
