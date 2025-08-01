@@ -1,6 +1,6 @@
 from telethon import TelegramClient, events
 from datetime import datetime, timezone
-import logging, re, configparser, asyncio
+import logging, re, configparser, asyncio, time
 
 # логування
 logging.basicConfig(format='[%(levelname)s %(asctime)s] %(name)s: %(message)s',
@@ -49,6 +49,7 @@ async def main():
     await client.start()
     logging.info("Бота запущено")
     print("Бота запущено")
+    await client.send_message(destination_channel, "Бота запущено.")
     
     me = await client.get_me()
     print("-----------------------------------------")
@@ -61,21 +62,29 @@ async def main():
     last_message = { "time": None, "found_triggers": set(), "number": 0}
     info_message = None
     
+    # функція для перевірки тригерів
+    def is_trigger_matched(text, trigger):
+        if "/" in trigger:
+            parts = trigger.split("/")
+            return all(re.search(part.strip(), text, re.IGNORECASE) for part in parts)
+        else:
+            return re.search(trigger, text, re.IGNORECASE) is not None
+    
     @client.on(events.NewMessage(chats=channels))
     async def forwardmess(event):
         nonlocal last_message, info_message
         
         async with lock:
             if event.message.text:
-                found_triggers = {trigger for trigger in triggers if re.search(trigger, event.raw_text, re.IGNORECASE)}
+                found_triggers = {trigger for trigger in triggers if is_trigger_matched(event.raw_text, trigger)}
                 
                 if found_triggers:
-                    if not any(re.search(black_word, event.raw_text, re.IGNORECASE) for black_word in black_list):
+                    if not any(is_trigger_matched(event.raw_text, black_word) for black_word in black_list):
                         time_diff = (event.date - last_message["time"]).seconds if last_message["time"] else 0
                         
                         if not last_message["time"] \
                         or time_diff > delay_long \
-                        or (not any(re.search(trigger, event.raw_text, re.IGNORECASE) for trigger in last_message["found_triggers"]) \
+                        or (not any(is_trigger_matched(event.raw_text, trigger) for trigger in last_message["found_triggers"]) \
                         and time_diff > delay_short):
                             
                             last_message["number"] = 1
@@ -102,5 +111,11 @@ async def main():
                         
     await client.run_until_disconnected()
 
-with client:
-    client.loop.run_until_complete(main())
+while True:
+    try:
+        with client:
+            client.loop.run_until_complete(main())
+    except Exception as e:
+        logging.error(f"Помилка: {e}. Перезапускаю бота через 60 секунд...")
+        print(f"[Помилка] {e}. Перезапуск через 60 сек...")
+        time.sleep(60)
