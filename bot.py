@@ -45,77 +45,79 @@ client = TelegramClient(session, api_id, api_hash)
 # блокування асинхронних функцій
 lock = asyncio.Lock()
 
-async def main():
-    await client.start()
-    logging.info("Бота запущено")
-    print("Бота запущено")
-    await client.send_message(destination_channel, "Бота запущено.")
+# інфа про останнє повідомлення
+last_message = { "time": None, "found_triggers": set(), "number": 0}
+info_message = None
+
+# функція для перевірки тригерів
+def is_trigger_matched(text, trigger):
+    if "/" in trigger:
+        parts = trigger.split("/")
+        return all(re.search(part.strip(), text, re.IGNORECASE) for part in parts)
+    else:
+        return re.search(trigger, text, re.IGNORECASE) is not None
+
+@client.on(events.NewMessage(chats=channels))
+async def forwardmess(event):
+    global last_message, info_message
     
-    me = await client.get_me()
-    print("-----------------------------------------")
-    print(f"ID: {me.id}")
-    print(f"Ім'я: {me.first_name}")
-    print(f"Номер телефону: {me.phone}")
-    print("-----------------------------------------")
-    
-    # інфа про останнє повідомлення
-    last_message = { "time": None, "found_triggers": set(), "number": 0}
-    info_message = None
-    
-    # функція для перевірки тригерів
-    def is_trigger_matched(text, trigger):
-        if "/" in trigger:
-            parts = trigger.split("/")
-            return all(re.search(part.strip(), text, re.IGNORECASE) for part in parts)
-        else:
-            return re.search(trigger, text, re.IGNORECASE) is not None
-    
-    @client.on(events.NewMessage(chats=channels))
-    async def forwardmess(event):
-        nonlocal last_message, info_message
-        
-        async with lock:
-            if event.message.text:
-                found_triggers = {trigger for trigger in triggers if is_trigger_matched(event.raw_text, trigger)}
-                
-                if found_triggers:
-                    if not any(is_trigger_matched(event.raw_text, black_word) for black_word in black_list):
-                        time_diff = (event.date - last_message["time"]).seconds if last_message["time"] else 0
+    async with lock:
+        if event.message.text:
+            found_triggers = {trigger for trigger in triggers if is_trigger_matched(event.raw_text, trigger)}
+            
+            if found_triggers:
+                if not any(is_trigger_matched(event.raw_text, black_word) for black_word in black_list):
+                    time_diff = (event.date - last_message["time"]).seconds if last_message["time"] else 0
+                    
+                    if not last_message["time"] \
+                    or time_diff > delay_long \
+                    or (not any(is_trigger_matched(event.raw_text, trigger) for trigger in last_message["found_triggers"]) \
+                    and time_diff > delay_short):
                         
-                        if not last_message["time"] \
-                        or time_diff > delay_long \
-                        or (not any(is_trigger_matched(event.raw_text, trigger) for trigger in last_message["found_triggers"]) \
-                        and time_diff > delay_short):
-                            
-                            last_message["number"] = 1
-                            logging.info(f"Пересилаю повідомлення:\n{event.raw_text}")
-                            await event.forward_to(destination_channel)
-                            
-                            last_message["time"] = event.date
-                            last_message["found_triggers"] = found_triggers
-                            info_message = None
+                        last_message["number"] = 1
+                        logging.info(f"Пересилаю повідомлення:\n{event.raw_text}")
+                        await event.forward_to(destination_channel)
+                        
+                        last_message["time"] = event.date
+                        last_message["found_triggers"] = found_triggers
+                        info_message = None
+                    else:
+                        last_message["number"] += 1
+                        last_message["found_triggers"].update(found_triggers)
+
+                        trigger_text = ", ".join(last_message["found_triggers"])
+                        
+                        mess = f"Повідомлень: {last_message['number']}\nТригери:\n{trigger_text}"
+                        if not info_message:
+                            logging.info("Створюю інформаційне повідомлення")
+                            info_message = await client.send_message(destination_channel, mess)
                         else:
-                            last_message["number"] += 1
-                            last_message["found_triggers"].update(found_triggers)
+                            logging.info("Редагую інформаційне повідомлення")
+                            await info_message.edit(mess)
+                        logging.info(mess)
 
-                            trigger_text = ", ".join(last_message["found_triggers"])
-                            
-                            mess = f"Повідомлень: {last_message['number']}\nТригери:\n{trigger_text}"
-                            if not info_message:
-                                logging.info("Створюю інформаційне повідомлення")
-                                info_message = await client.send_message(destination_channel, mess)
-                            else:
-                                logging.info("Редагую інформаційне повідомлення")
-                                await info_message.edit(mess)
-                            logging.info(mess)
-                        
-    await client.run_until_disconnected()
+async def main():
+    while True:
+        try:
+            await client.start()
+            logging.info("Бота запущено")
+            print("Бота запущено")
+            await client.send_message(destination_channel, "Бота запущено.")
+            
+            me = await client.get_me()
+            print("-----------------------------------------")
+            print(f"ID: {me.id}")
+            print(f"Ім'я: {me.first_name}")
+            print(f"Номер телефону: {me.phone}")
+            print("-----------------------------------------")
+            
+            await client.run_until_disconnected()
+            
+        except Exception as e:
+            logging.error(f"Помилка: {e}. Перезапускаю бота через 60 секунд...")
+            print(f"[Помилка] {e}. Перезапуск через 60 сек...")
+            await asyncio.sleep(60)
 
-while True:
-    try:
-        with client:
-            client.loop.run_until_complete(main())
-    except Exception as e:
-        logging.error(f"Помилка: {e}. Перезапускаю бота через 60 секунд...")
-        print(f"[Помилка] {e}. Перезапуск через 60 сек...")
-        time.sleep(60)
+
+with client:
+    client.loop.run_until_complete(main())
