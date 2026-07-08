@@ -95,7 +95,6 @@ async def forwardmess(event):
                             logging.info("Редагую інформаційне повідомлення")
                             await info_message.edit(mess)
                         logging.info(mess)
-<<<<<<< HEAD
                         
                         # Дістаємо інформацію про канал-джерело
                         chat = await event.get_chat()
@@ -116,8 +115,6 @@ async def forwardmess(event):
                             comment_to=info_message.id
                         )
                         logging.info("Псевдо-форвард додано в коментарі")
-=======
->>>>>>> origin/main
 
 async def main():
     while True:
